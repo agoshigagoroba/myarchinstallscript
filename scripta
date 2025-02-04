@@ -16,10 +16,12 @@ pacman -Syu --noconfirm
 echo "Definindo fuso horário para Recife..."
 ln -sf /usr/share/zoneinfo/America/Recife /etc/localtime
 hwclock --systohc
+timedatectl set-timezone America/Recife
 
-# Configurar teclado como ABNT2
+# Configurar teclado como ABNT2 (console e interface gráfica)
 echo "Configurando teclado como ABNT2..."
 echo "KEYMAP=br-abnt2" > /etc/vconsole.conf
+localectl set-x11-keymap br abnt2
 
 # Definir ponto de montagem padrão para HDs
 echo "Configurando /mnt como local padrão para montagem de HDs..."
@@ -64,7 +66,7 @@ pacman -Syu --noconfirm
 
 # Instalar KDE Plasma e pacotes essenciais para Wayland
 echo "Instalando KDE Plasma com suporte a Wayland..."
-pacman -S --noconfirm plasma-meta sddm-wayland qt5-wayland qt6-wayland
+pacman -S --noconfirm plasma-meta kde-applications sddm-wayland qt5-wayland qt6-wayland
 
 # Instalar o gerenciador de conexões do KDE (Plasma Network Manager)
 echo "Instalando Plasma Network Manager..."
@@ -110,11 +112,3 @@ sudo -u blackbloc bash -c "cd /home/blackbloc && git clone https://aur.archlinux
 
 # Mensagem final
 echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
-
-
-
-
-##################################PRIMEIRA FASE CONCLUÍDA######################################
-
-
-
