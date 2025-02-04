@@ -69,33 +69,56 @@ sed -i 's/#Color/Color/' /etc/pacman.conf
 sed -i '/\[multilib\]/,/Include/s/^#//' /etc/pacman.conf
 pacman -Syu --noconfirm
 
+# Instalar Xorg primeiro como base
+echo "Instalando Xorg base..."
+pacman -S --noconfirm xorg xorg-server xorg-xinit xorg-xwayland
+
 # Instalar KDE Plasma com suporte Wayland
 echo "Instalando KDE Plasma com suporte Wayland..."
 pacman -S --noconfirm \
+    plasma \
     plasma-meta \
     plasma-wayland-session \
     plasma-wayland-protocols \
     qt5-wayland \
     qt6-wayland \
-    sddm \
-    xorg-server \
-    xorg-xwayland
+    sddm
 
-# Configurar SDDM para iniciar preferencialmente em Wayland
+# Configurar SDDM
 echo "Configurando SDDM..."
 mkdir -p /etc/sddm.conf.d
+
+# Criar diretório de configuração SDDM se não existir
+mkdir -p /var/lib/sddm
+chown -R sddm:sddm /var/lib/sddm
+
+# Configurar SDDM para X11 com suporte a sessão Wayland
 cat << EOF > /etc/sddm.conf.d/kde_settings.conf
 [General]
-DisplayServer=wayland
-GreeterEnvironment=QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+DisplayServer=x11
+GreeterEnvironment=QT_WAYLAND_SHELL_INTEGRATION=layer-shell
+
+[Theme]
+Current=breeze
+CursorTheme=breeze_cursors
+EnableAvatars=true
+FacesDir=/usr/share/sddm/faces
+
+[Users]
+MinimumUid=1000
+MaximumUid=60000
 
 [Wayland]
-CompositorCommand=kwin_wayland --drm --no-lockscreen
+SessionDir=/usr/share/wayland-sessions
+CompositorCommand=kwin_wayland --drm --no-lockscreen --no-global-shortcuts --locale1
 
 [X11]
+EnableHiDPI=true
+MinimumVT=1
 ServerArguments=-nolisten tcp
 EOF
 
+# Habilitar serviço SDDM
 systemctl enable sddm
 
 # Detectar GPU e instalar drivers adequados
