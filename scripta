@@ -21,13 +21,19 @@ hwclock --systohc
 echo "Configurando teclado como ABNT2..."
 echo "KEYMAP=br-abnt2" > /etc/vconsole.conf
 
+# Definir ponto de montagem padrão para HDs
+echo "Configurando /mnt como local padrão para montagem de HDs..."
+mkdir -p /mnt
+echo "Defaults,auto,users,rw,uid=1000,gid=1000  0 2" > /etc/fstab
+echo 'SUBSYSTEM=="block", KERNEL=="sd[b-z][0-9]", ACTION=="add", RUN+="/usr/bin/mount -o defaults,auto,users,rw,uid=1000,gid=1000 /dev/%k /mnt"' > /etc/udev/rules.d/99-hdd-mount.rules
+
 # Instalar PipeWire e componentes de áudio
 echo "Instalando PipeWire e componentes de áudio..."
 pacman -S --noconfirm pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber pavucontrol
 
-# Instalar kernel Zen
-echo "Instalando kernel Zen..."
-pacman -S --noconfirm linux-zen linux-zen-headers
+# Instalar kernel Zen e Kernel normal
+echo "Instalando kernel Zen e kernel padrão..."
+pacman -S --noconfirm linux linux-headers linux-zen linux-zen-headers
 
 # Criar usuário blackbloc
 echo "Criando usuário 'blackbloc'..."
@@ -35,9 +41,15 @@ useradd -m -G wheel -s /bin/bash blackbloc
 echo "Defina a senha do usuário 'blackbloc':"
 passwd blackbloc
 
-# Instalar componentes de Wi-Fi
-echo "Instalando drivers e ferramentas de Wi-Fi..."
-pacman -S --noconfirm networkmanager wpa_supplicant wireless_tools netctl
+# Instalar e ativar NetworkManager para conexão de rede
+echo "Instalando e ativando NetworkManager..."
+pacman -S --noconfirm networkmanager network-manager-applet plasma-nm
+systemctl enable NetworkManager
+systemctl start NetworkManager
+
+# Adicionar suporte a Wi-Fi
+echo "Instalando suporte a Wi-Fi..."
+pacman -S --noconfirm wpa_supplicant wireless_tools netctl iw iwd
 
 # Configurar sudo para o usuário
 echo "Configurando sudo para o usuário..."
@@ -50,10 +62,59 @@ sed -i 's/#Color/Color/' /etc/pacman.conf
 sed -i '/\[multilib\]/,/Include/s/^#//' /etc/pacman.conf
 pacman -Syu --noconfirm
 
-# Instalar KDE Plasma e pacotes essenciais
-echo "Instalando KDE Plasma e pacotes essenciais..."
-pacman -S --noconfirm plasma-meta kde-applications sddm xorg xorg-server
+# Instalar KDE Plasma e pacotes essenciais para Wayland
+echo "Instalando KDE Plasma com suporte a Wayland..."
+pacman -S --noconfirm plasma-meta kde-applications sddm-wayland qt5-wayland qt6-wayland
+
+# Instalar o gerenciador de conexões do KDE (Plasma Network Manager)
+echo "Instalando Plasma Network Manager..."
+pacman -S --noconfirm plasma-nm
+
+# Configurar SDDM para iniciar em Wayland
+echo "Configurando SDDM para Wayland..."
+mkdir -p /etc/sddm.conf.d
+echo "[General]" > /etc/sddm.conf.d/wayland.conf
+echo "DisplayServer=wayland" >> /etc/sddm.conf.d/wayland.conf
 systemctl enable sddm
+
+# Detectar GPU e instalar drivers adequados
+echo "Detectando GPU..."
+GPU=$(lspci | grep -E "VGA|3D")
+
+if echo "$GPU" | grep -qi "NVIDIA"; then
+    echo "NVIDIA detectada. Instalando drivers..."
+    pacman -S --noconfirm nvidia nvidia-utils nvidia-dkms nvidia-settings
+    echo "Adicionando módulo NVIDIA ao mkinitcpio..."
+    echo "MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)" >> /etc/mkinitcpio.conf
+elif echo "$GPU" | grep -qi "AMD"; then
+    echo "AMD detectada. Instalando drivers..."
+    pacman -S --noconfirm mesa xf86-video-amdgpu vulkan-radeon
+    echo "Adicionando módulo AMD ao mkinitcpio..."
+    echo "MODULES=(amdgpu)" >> /etc/mkinitcpio.conf
+elif echo "$GPU" | grep -qi "Intel"; then
+    echo "Intel detectada. Instalando drivers..."
+    pacman -S --noconfirm mesa xf86-video-intel vulkan-intel
+    echo "Adicionando módulo Intel ao mkinitcpio..."
+    echo "MODULES=(i915)" >> /etc/mkinitcpio.conf
+else
+    echo "Nenhuma GPU conhecida detectada. Verifique manualmente!"
+fi
+
+# Atualizar mkinitcpio para incluir os módulos corretos
+echo "Atualizando initramfs para carregar os drivers..."
+mkinitcpio -P
+
+# Instalar yay para suporte ao AUR
+echo "Instalando yay para suporte ao AUR..."
+sudo -u blackbloc bash -c "cd /home/blackbloc && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
 
 # Mensagem final
 echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
+
+
+
+
+##################################PRIMEIRA FASE CONCLUÍDA######################################
+
+
+
