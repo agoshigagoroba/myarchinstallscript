@@ -12,22 +12,30 @@ pacman -Sy --noconfirm archlinux-keyring
 echo "Atualizando o sistema..."
 pacman -Syu --noconfirm
 
-# Configurar fuso horário para Recife com redundância
+# Configurar fuso horário para Recife
 echo "Definindo fuso horário para Recife..."
 ln -sf /usr/share/zoneinfo/America/Recife /etc/localtime
 hwclock --systohc
 timedatectl set-timezone America/Recife
 
-# Configurar teclado ABNT2 (console e X11/Wayland)
+# Configurar teclado como ABNT2 (console e interface gráfica)
 echo "Configurando teclado como ABNT2..."
 echo "KEYMAP=br-abnt2" > /etc/vconsole.conf
 localectl set-x11-keymap br abnt2
 
+# Configurar locale
+echo "Configurando locale..."
+echo "pt_BR.UTF-8 UTF-8" >> /etc/locale.gen
+locale-gen
+echo "LANG=pt_BR.UTF-8" > /etc/locale.conf
+
 # Definir ponto de montagem padrão para HDs
 echo "Configurando /mnt como local padrão para montagem de HDs..."
-mkdir -p /mnt
-echo "Defaults,auto,users,rw,uid=1000,gid=1000  0 2" > /etc/fstab
-echo 'SUBSYSTEM=="block", KERNEL=="sd[b-z][0-9]", ACTION=="add", RUN+="/usr/bin/mount -o defaults,auto,users,rw,uid=1000,gid=1000 /dev/%k /mnt"' > /etc/udev/rules.d/99-hdd-mount.rules
+mkdir -p /mnt/hd{1,2,3,4}
+cat << EOF > /etc/udev/rules.d/99-local-mount.rules
+ACTION=="add", SUBSYSTEMS=="usb", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", RUN{program}+="/usr/bin/systemd-mount --no-block --collect --discover /dev/%k /mnt/hd1"
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", KERNEL=="sd[b-z][0-9]", RUN{program}+="/usr/bin/systemd-mount --no-block --collect /dev/%k /mnt/hd%n1"
+EOF
 
 # Instalar PipeWire e componentes de áudio
 echo "Instalando PipeWire e componentes de áudio..."
@@ -39,17 +47,16 @@ pacman -S --noconfirm linux linux-headers linux-zen linux-zen-headers
 
 # Criar usuário blackbloc
 echo "Criando usuário 'blackbloc'..."
-useradd -m -G wheel -s /bin/bash blackbloc
+useradd -m -G wheel,audio,video,storage,optical -s /bin/bash blackbloc
 echo "Defina a senha do usuário 'blackbloc':"
 passwd blackbloc
 
-# Instalar e configurar rede com redundância
+# Instalar e configurar rede
 echo "Instalando e configurando componentes de rede..."
-pacman -S --noconfirm networkmanager network-manager-applet plasma-nm wpa_supplicant wireless_tools netctl iw iwd
+pacman -S --noconfirm networkmanager network-manager-applet wpa_supplicant wireless_tools netctl iw iwd dhcpcd
 systemctl enable NetworkManager
-systemctl start NetworkManager
 systemctl enable iwd
-systemctl start iwd
+systemctl enable dhcpcd
 
 # Configurar sudo para o usuário
 echo "Configurando sudo para o usuário..."
@@ -62,22 +69,34 @@ sed -i 's/#Color/Color/' /etc/pacman.conf
 sed -i '/\[multilib\]/,/Include/s/^#//' /etc/pacman.conf
 pacman -Syu --noconfirm
 
-# Instalar KDE Plasma completo com Wayland
-echo "Instalando KDE Plasma com suporte a Wayland..."
-pacman -S --noconfirm plasma-meta plasma-wayland-session plasma-wayland-protocols \
-    sddm-wayland qt5-wayland qt6-wayland kde-applications
+# Instalar KDE Plasma com suporte Wayland
+echo "Instalando KDE Plasma com suporte Wayland..."
+pacman -S --noconfirm \
+    plasma-meta \
+    plasma-wayland-session \
+    plasma-wayland-protocols \
+    qt5-wayland \
+    qt6-wayland \
+    kde-applications \
+    sddm \
+    xorg-server \
+    xorg-xwayland
 
-# Configurar SDDM para Wayland com redundância
-echo "Configurando SDDM para Wayland..."
+# Configurar SDDM para iniciar preferencialmente em Wayland
+echo "Configurando SDDM..."
 mkdir -p /etc/sddm.conf.d
-cat > /etc/sddm.conf.d/wayland.conf << EOF
+cat << EOF > /etc/sddm.conf.d/kde_settings.conf
 [General]
 DisplayServer=wayland
+GreeterEnvironment=QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+
 [Wayland]
-EnableHiDPI=true
+CompositorCommand=kwin_wayland --drm --no-lockscreen
+
 [X11]
-EnableHiDPI=true
+ServerArguments=-nolisten tcp
 EOF
+
 systemctl enable sddm
 
 # Detectar GPU e instalar drivers adequados
@@ -87,7 +106,10 @@ GPU=$(lspci | grep -E "VGA|3D")
 if echo "$GPU" | grep -qi "NVIDIA"; then
     echo "NVIDIA detectada. Instalando drivers..."
     pacman -S --noconfirm nvidia nvidia-utils nvidia-dkms nvidia-settings
-    echo "options nvidia-drm modeset=1" > /etc/modprobe.d/nvidia.conf
+    # Adicionar suporte a Wayland para NVIDIA
+    cat << EOF > /etc/modprobe.d/nvidia.conf
+options nvidia-drm modeset=1
+EOF
     echo "MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)" >> /etc/mkinitcpio.conf
 elif echo "$GPU" | grep -qi "AMD"; then
     echo "AMD detectada. Instalando drivers..."
@@ -98,20 +120,20 @@ elif echo "$GPU" | grep -qi "Intel"; then
     pacman -S --noconfirm mesa xf86-video-intel vulkan-intel
     echo "MODULES=(i915)" >> /etc/mkinitcpio.conf
 else
-    echo "Nenhuma GPU conhecida detectada. Verifique manualmente!"
+    echo "Nenhuma GPU conhecida detectada. Instalando drivers genéricos..."
+    pacman -S --noconfirm mesa xf86-video-vesa
 fi
 
 # Atualizar mkinitcpio para incluir os módulos corretos
 echo "Atualizando initramfs para carregar os drivers..."
 mkinitcpio -P
 
-# Instalar yay para suporte ao AUR
+# Instalar yay (como usuário blackbloc)
 echo "Instalando yay para suporte ao AUR..."
-sudo -u blackbloc bash -c "cd /home/blackbloc && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
-
-# Garantir permissões corretas
-echo "Ajustando permissões..."
-chown -R blackbloc:blackbloc /home/blackbloc
+pacman -S --noconfirm base-devel git
+su - blackbloc -c "git clone https://aur.archlinux.org/yay.git /tmp/yay && cd /tmp/yay && makepkg -si --noconfirm"
 
 # Mensagem final
 echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
+echo "Após reiniciar, o sistema iniciará preferencialmente em Wayland."
+echo "Para verificar se está usando Wayland, execute 'echo \$XDG_SESSION_TYPE' após logar."
