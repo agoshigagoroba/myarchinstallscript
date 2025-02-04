@@ -88,7 +88,11 @@ pacman -S --noconfirm \
 echo "Configurando SDDM..."
 mkdir -p /etc/sddm.conf.d
 
-# Criar diretório de configuração SDDM se não existir
+# Criar usuário e grupo sddm se não existirem
+groupadd -r sddm 2>/dev/null || true
+useradd -r -g sddm -d /var/lib/sddm -s /usr/bin/nologin sddm 2>/dev/null || true
+
+# Criar diretório de configuração SDDM
 mkdir -p /var/lib/sddm
 chown -R sddm:sddm /var/lib/sddm
 
@@ -96,13 +100,10 @@ chown -R sddm:sddm /var/lib/sddm
 cat << EOF > /etc/sddm.conf.d/kde_settings.conf
 [General]
 DisplayServer=x11
-GreeterEnvironment=QT_WAYLAND_SHELL_INTEGRATION=layer-shell
 
 [Theme]
 Current=breeze
 CursorTheme=breeze_cursors
-EnableAvatars=true
-FacesDir=/usr/share/sddm/faces
 
 [Users]
 MinimumUid=1000
@@ -110,7 +111,7 @@ MaximumUid=60000
 
 [Wayland]
 SessionDir=/usr/share/wayland-sessions
-CompositorCommand=kwin_wayland --drm --no-lockscreen --no-global-shortcuts --locale1
+CompositorCommand=kwin_wayland --drm --no-lockscreen --no-global-shortcuts
 
 [X11]
 EnableHiDPI=true
@@ -119,7 +120,7 @@ ServerArguments=-nolisten tcp
 EOF
 
 # Habilitar serviço SDDM
-systemctl enable sddm
+systemctl enable sddm.service
 
 # Detectar GPU e instalar drivers adequados
 echo "Detectando GPU..."
