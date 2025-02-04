@@ -77,7 +77,6 @@ pacman -S --noconfirm \
     plasma-wayland-protocols \
     qt5-wayland \
     qt6-wayland \
-    kde-applications \
     sddm \
     xorg-server \
     xorg-xwayland
