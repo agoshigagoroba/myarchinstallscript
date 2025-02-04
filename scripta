@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# Configurar mirrors do Arch Linux
+echo "Atualizando mirrors do Arch Linux..."
+reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
+
+# Atualizar chaveiro do Arch
+echo "Baixando e populando o keyring..."
+pacman -Sy --noconfirm archlinux-keyring
+
+# Atualizar sistema
+echo "Atualizando o sistema..."
+pacman -Syu --noconfirm
+
+# Configurar fuso horário para Recife
+echo "Definindo fuso horário para Recife..."
+ln -sf /usr/share/zoneinfo/America/Recife /etc/localtime
+hwclock --systohc
+
+# Configurar teclado como ABNT2
+echo "Configurando teclado como ABNT2..."
+echo "KEYMAP=br-abnt2" > /etc/vconsole.conf
+
+# Instalar PipeWire e componentes de áudio
+echo "Instalando PipeWire e componentes de áudio..."
+pacman -S --noconfirm pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber pavucontrol
+
+# Instalar kernel Zen
+echo "Instalando kernel Zen..."
+pacman -S --noconfirm linux-zen linux-zen-headers
+
+# Criar usuário blackbloc
+echo "Criando usuário 'blackbloc'..."
+useradd -m -G wheel -s /bin/bash blackbloc
+echo "Defina a senha do usuário 'blackbloc':"
+passwd blackbloc
+
+# Instalar componentes de Wi-Fi
+echo "Instalando drivers e ferramentas de Wi-Fi..."
+pacman -S --noconfirm networkmanager wpa_supplicant wireless_tools netctl
+
+# Configurar sudo para o usuário
+echo "Configurando sudo para o usuário..."
+echo "blackbloc ALL=(ALL) ALL" >> /etc/sudoers
+
+# Adicionar suporte ao AUR no Pacman
+echo "Habilitando repositórios do Arch User Repository (AUR)..."
+sed -i 's/#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
+sed -i 's/#Color/Color/' /etc/pacman.conf
+sed -i '/\[multilib\]/,/Include/s/^#//' /etc/pacman.conf
+pacman -Syu --noconfirm
+
+# Instalar KDE Plasma e pacotes essenciais
+echo "Instalando KDE Plasma e pacotes essenciais..."
+pacman -S --noconfirm plasma-meta kde-applications sddm xorg xorg-server
+systemctl enable sddm
+
+# Mensagem final
+echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
