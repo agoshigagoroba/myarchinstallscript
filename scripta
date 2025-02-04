@@ -12,13 +12,13 @@ pacman -Sy --noconfirm archlinux-keyring
 echo "Atualizando o sistema..."
 pacman -Syu --noconfirm
 
-# Configurar fuso horário para Recife
+# Configurar fuso horário para Recife com redundância
 echo "Definindo fuso horário para Recife..."
 ln -sf /usr/share/zoneinfo/America/Recife /etc/localtime
 hwclock --systohc
 timedatectl set-timezone America/Recife
 
-# Configurar teclado como ABNT2 (console e interface gráfica)
+# Configurar teclado ABNT2 (console e X11/Wayland)
 echo "Configurando teclado como ABNT2..."
 echo "KEYMAP=br-abnt2" > /etc/vconsole.conf
 localectl set-x11-keymap br abnt2
@@ -43,15 +43,13 @@ useradd -m -G wheel -s /bin/bash blackbloc
 echo "Defina a senha do usuário 'blackbloc':"
 passwd blackbloc
 
-# Instalar e ativar NetworkManager para conexão de rede
-echo "Instalando e ativando NetworkManager..."
-pacman -S --noconfirm networkmanager network-manager-applet plasma-nm
+# Instalar e configurar rede com redundância
+echo "Instalando e configurando componentes de rede..."
+pacman -S --noconfirm networkmanager network-manager-applet plasma-nm wpa_supplicant wireless_tools netctl iw iwd
 systemctl enable NetworkManager
 systemctl start NetworkManager
-
-# Adicionar suporte a Wi-Fi
-echo "Instalando suporte a Wi-Fi..."
-pacman -S --noconfirm wpa_supplicant wireless_tools netctl iw iwd
+systemctl enable iwd
+systemctl start iwd
 
 # Configurar sudo para o usuário
 echo "Configurando sudo para o usuário..."
@@ -64,19 +62,22 @@ sed -i 's/#Color/Color/' /etc/pacman.conf
 sed -i '/\[multilib\]/,/Include/s/^#//' /etc/pacman.conf
 pacman -Syu --noconfirm
 
-# Instalar KDE Plasma e pacotes essenciais para Wayland
+# Instalar KDE Plasma completo com Wayland
 echo "Instalando KDE Plasma com suporte a Wayland..."
-pacman -S --noconfirm plasma-meta sddm-wayland qt5-wayland qt6-wayland
+pacman -S --noconfirm plasma-meta plasma-wayland-session plasma-wayland-protocols \
+    sddm-wayland qt5-wayland qt6-wayland kde-applications
 
-# Instalar o gerenciador de conexões do KDE (Plasma Network Manager)
-echo "Instalando Plasma Network Manager..."
-pacman -S --noconfirm plasma-nm
-
-# Configurar SDDM para iniciar em Wayland
+# Configurar SDDM para Wayland com redundância
 echo "Configurando SDDM para Wayland..."
 mkdir -p /etc/sddm.conf.d
-echo "[General]" > /etc/sddm.conf.d/wayland.conf
-echo "DisplayServer=wayland" >> /etc/sddm.conf.d/wayland.conf
+cat > /etc/sddm.conf.d/wayland.conf << EOF
+[General]
+DisplayServer=wayland
+[Wayland]
+EnableHiDPI=true
+[X11]
+EnableHiDPI=true
+EOF
 systemctl enable sddm
 
 # Detectar GPU e instalar drivers adequados
@@ -86,17 +87,15 @@ GPU=$(lspci | grep -E "VGA|3D")
 if echo "$GPU" | grep -qi "NVIDIA"; then
     echo "NVIDIA detectada. Instalando drivers..."
     pacman -S --noconfirm nvidia nvidia-utils nvidia-dkms nvidia-settings
-    echo "Adicionando módulo NVIDIA ao mkinitcpio..."
+    echo "options nvidia-drm modeset=1" > /etc/modprobe.d/nvidia.conf
     echo "MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)" >> /etc/mkinitcpio.conf
 elif echo "$GPU" | grep -qi "AMD"; then
     echo "AMD detectada. Instalando drivers..."
     pacman -S --noconfirm mesa xf86-video-amdgpu vulkan-radeon
-    echo "Adicionando módulo AMD ao mkinitcpio..."
     echo "MODULES=(amdgpu)" >> /etc/mkinitcpio.conf
 elif echo "$GPU" | grep -qi "Intel"; then
     echo "Intel detectada. Instalando drivers..."
     pacman -S --noconfirm mesa xf86-video-intel vulkan-intel
-    echo "Adicionando módulo Intel ao mkinitcpio..."
     echo "MODULES=(i915)" >> /etc/mkinitcpio.conf
 else
     echo "Nenhuma GPU conhecida detectada. Verifique manualmente!"
@@ -109,6 +108,10 @@ mkinitcpio -P
 # Instalar yay para suporte ao AUR
 echo "Instalando yay para suporte ao AUR..."
 sudo -u blackbloc bash -c "cd /home/blackbloc && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
+
+# Garantir permissões corretas
+echo "Ajustando permissões..."
+chown -R blackbloc:blackbloc /home/blackbloc
 
 # Mensagem final
 echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
