@@ -85,7 +85,8 @@ echo "Instalando e configurando LightDM..."
 pacman -S --noconfirm lightdm lightdm-gtk-greeter
 # Configura o LightDM para usar a sessão Plasma Wayland por padrão:
 if [ -f /etc/lightdm/lightdm.conf ]; then
-    # Insere a linha 'user-session=plasmawayland-session' na seção [Seat:*]
+    # Insere (ou substitui) a linha 'user-session=plasmawayland-session' na seção [Seat:*]
+    sed -i '/^\[Seat:\*\]/,/^$/ s/^user-session=.*/user-session=plasmawayland-session/' /etc/lightdm/lightdm.conf || \
     sed -i '/^\[Seat:\*\]/a user-session=plasmawayland-session' /etc/lightdm/lightdm.conf
 else
     cat <<EOF >/etc/lightdm/lightdm.conf
@@ -142,9 +143,7 @@ echo "Instalando yay (AUR helper) para o usuário $username..."
 sudo -u "$username" bash -c "cd ~ && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
 
 # Instala pacotes adicionais via yay:
-#   dolphin, plasma-systemmonitor, spectacle, kdeconnect, kfind,
-#   firefox, kmag, kmix, gparted
 echo "Instalando pacotes adicionais via yay para o usuário $username..."
-sudo -u "$username" yay -S --noconfirm dolphin plasma-systemmonitor spectacle kdeconnect kfind firefox kmag kmix gparted
+sudo -u "$username" yay -S --noconfirm alacritty virtualbox-host-dkms open-vm-tools dolphin plasma-systemmonitor spectacle kdeconnect kfind firefox kmag kmix gparted fastfetch
 
 echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
