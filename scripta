@@ -38,7 +38,7 @@ systemctl start NetworkManager
 echo "Instalando PipeWire e componentes de áudio..."
 pacman -S --noconfirm pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber pavucontrol
 
-echo "Instalando kernels..."
+echo "Instalando kernels (normal e zen)..."
 pacman -S --noconfirm linux linux-headers linux-zen linux-zen-headers
 
 echo "Detectando GPU e instalando drivers..."
@@ -57,6 +57,18 @@ fi
 echo "Atualizando initramfs..."
 mkinitcpio -P
 
+# Se o GRUB estiver instalado, tenta configurar o kernel zen como padrão.
+if [ -f /boot/grub/grub.cfg ]; then
+    echo "Configurando o GRUB para iniciar com linux-zen por padrão..."
+    default_entry=$(grep -E "menuentry '.*linux-zen.*'" /boot/grub/grub.cfg | head -n1 | cut -d"'" -f2)
+    if [ -n "$default_entry" ]; then
+        grub-set-default "$default_entry"
+        echo "Entrada padrão do GRUB definida como: $default_entry"
+    else
+        echo "Não foi possível encontrar uma entrada para linux-zen no grub.cfg."
+    fi
+fi
+
 ####################################
 # Instalação do Ambiente Gráfico   #
 ####################################
@@ -67,7 +79,7 @@ pacman -S --noconfirm plasma-workspace plasma-meta qt5-wayland qt6-wayland
 echo "Instalando LightDM e numlockx..."
 pacman -S --noconfirm lightdm lightdm-gtk-greeter numlockx
 
-# Configura o LightDM para usar a sessão Plasma Wayland e ativar o numlock
+# Configura o LightDM para usar a sessão Plasma Wayland e ativar o NumLock
 if [ -f /etc/lightdm/lightdm.conf ]; then
     if grep -q "^user-session=" /etc/lightdm/lightdm.conf; then
        sed -i 's/^user-session=.*/user-session=plasmawayland-session/' /etc/lightdm/lightdm.conf
@@ -113,7 +125,7 @@ echo "Usuário $username criado com sucesso!"
 echo "=============================================="
 
 #####################################################
-# Configuração do Fish: Executa fastfetch no início  #
+# Configuração do Fish: fastfetch no startup         #
 #####################################################
 
 echo "Configurando fish para rodar fastfetch no startup..."
