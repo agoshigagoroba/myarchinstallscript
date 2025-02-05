@@ -7,6 +7,10 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# Instala o reflector, se não estiver instalado
+echo "Instalando reflector..."
+pacman -S --noconfirm reflector
+
 # Atualiza os mirrors do Arch Linux
 echo "Atualizando mirrors do Arch Linux..."
 reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
@@ -33,14 +37,6 @@ pacman -S --noconfirm networkmanager network-manager-applet
 systemctl enable NetworkManager
 systemctl start NetworkManager
 
-# Cria o usuário 'blackbloc' de forma não interativa e configura sudo
-echo "Criando usuário 'blackbloc'..."
-useradd -m -G wheel -s /bin/bash blackbloc
-# Define uma senha temporária (substitua 'senha_padrao' pela senha desejada)
-echo "blackbloc:senha_padrao" | chpasswd
-chown -R blackbloc:blackbloc /home/blackbloc
-echo "blackbloc ALL=(ALL) ALL" > /etc/sudoers.d/blackbloc
-
 # Instala PipeWire e componentes de áudio
 echo "Instalando PipeWire e componentes de áudio..."
 pacman -S --noconfirm pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber pavucontrol
@@ -55,7 +51,6 @@ GPU=$(lspci | grep -E "VGA|3D")
 if echo "$GPU" | grep -qi "NVIDIA"; then
     echo "GPU NVIDIA detectada. Instalando drivers..."
     pacman -S --noconfirm nvidia nvidia-utils nvidia-dkms nvidia-settings
-    # Insere os módulos da NVIDIA no mkinitcpio.conf (supondo que MODULES=() esteja vazio)
     sed -i '/^MODULES=/ s/)/ nvidia nvidia_modeset nvidia_uvm nvidia_drm)/' /etc/mkinitcpio.conf
 elif echo "$GPU" | grep -qi "AMD"; then
     echo "GPU AMD detectada. Instalando drivers..."
@@ -73,24 +68,44 @@ fi
 echo "Atualizando initramfs..."
 mkinitcpio -P
 
-# Instala o Plasma 6 com suporte a Wayland (sem kde-applications)
+# Instala o Plasma 6 com suporte a Wayland (sem o pacote kde-applications)
 echo "Instalando KDE Plasma 6 com Wayland..."
 pacman -S --noconfirm plasma-workspace plasma-meta qt5-wayland qt6-wayland
 
 # Instala e ativa o GDM para gerenciar sessões Wayland
 echo "Instalando e ativando GDM..."
 pacman -S --noconfirm gdm
-# Desabilita eventuais vestígios do SDDM, se existirem
 systemctl disable sddm 2>/dev/null || true
 rm -f /etc/sddm.conf.d/wayland.conf
 systemctl enable gdm
 systemctl start gdm
 
-# Instala o yay (AUR helper) como usuário 'blackbloc'
-echo "Instalando yay (AUR helper)..."
-sudo -u blackbloc bash -c "cd /home/blackbloc && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
+# --- Criação interativa do usuário (penúltima ação) ---
+echo "=============================================="
+echo "Criação interativa de usuário"
+echo "=============================================="
+read -rp "Informe o nome do usuário a ser criado: " username
+useradd -m -G wheel -s /bin/bash "$username"
+echo "Agora, defina a senha para o usuário $username:"
+passwd "$username"
+chown -R "$username":"$username" /home/"$username"
+echo "$username ALL=(ALL) ALL" > /etc/sudoers.d/"$username"
+echo "Usuário $username criado com sucesso!"
+echo "=============================================="
 
-echo "Instalando pacotes adicionais via yay..."
-sudo -u blackbloc yay -S --noconfirm alacritty fish fastfetch virtualbox-host-dkms open-vm-tools
+# --- Instalação do yay e pacotes adicionais via yay (última ação) ---
+
+# Instala o yay (AUR helper) como o usuário recém-criado
+echo "Instalando yay (AUR helper) para o usuário $username..."
+sudo -u "$username" bash -c "cd /home/$username && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
+
+# Instala pacotes adicionais via yay:
+#   - alacritty: terminal moderno com aceleração por GPU
+#   - fish: shell interativo
+#   - fastfetch: ferramenta de informação do sistema
+#   - virtualbox-host-dkms: suporte ao Oracle VirtualBox (modo host)
+#   - open-vm-tools: ferramentas para VMware
+echo "Instalando pacotes adicionais via yay para o usuário $username..."
+sudo -u "$username" yay -S --noconfirm alacritty fish fastfetch virtualbox-host-dkms open-vm-tools
 
 echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
