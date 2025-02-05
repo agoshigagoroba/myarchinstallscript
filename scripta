@@ -3,122 +3,94 @@ set -e
 
 # Verifica se o script está sendo executado como root
 if [[ $EUID -ne 0 ]]; then
-   echo "Este script precisa ser executado como root." 
-   exit 1
+  echo "Este script deve ser executado como root."
+  exit 1
 fi
 
-# 1. Configurar mirrors do Arch Linux
+# Atualiza os mirrors do Arch Linux
 echo "Atualizando mirrors do Arch Linux..."
 reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
 
-# 2. Atualizar chaveiro do Arch
-echo "Baixando e populando o keyring..."
+# Atualiza o keyring e o sistema
+echo "Atualizando keyring e sistema..."
 pacman -Sy --noconfirm archlinux-keyring
-
-# 3. Atualizar sistema
-echo "Atualizando o sistema..."
 pacman -Syu --noconfirm
 
-# 4. Configurar fuso horário para Recife
-echo "Definindo fuso horário para Recife..."
+# Configura fuso horário para Recife
+echo "Configurando fuso horário para Recife..."
 ln -sf /usr/share/zoneinfo/America/Recife /etc/localtime
 hwclock --systohc
 timedatectl set-timezone America/Recife
 
-# 5. Configurar teclado como ABNT2 (console e interface gráfica)
-echo "Configurando teclado como ABNT2..."
+# Configura o teclado ABNT2 (para console e ambiente gráfico)
+echo "Configurando teclado (ABNT2)..."
 echo "KEYMAP=br-abnt2" > /etc/vconsole.conf
 localectl set-x11-keymap br abnt2
 
-# 6. Definir ponto de montagem padrão para HDs
-echo "Configurando /mnt como local padrão para montagem de HDs..."
-mkdir -p /mnt
-# ATENÇÃO: Esta linha gera um /etc/fstab inválido.
-# O arquivo fstab deve conter seis campos. Essa linha deve ser ajustada conforme a necessidade.
-echo "Defaults,auto,users,rw,uid=1000,gid=1000  0 2" > /etc/fstab
-echo 'SUBSYSTEM=="block", KERNEL=="sd[b-z][0-9]", ACTION=="add", RUN+="/usr/bin/mount -o defaults,auto,users,rw,uid=1000,gid=1000 /dev/%k /mnt"' > /etc/udev/rules.d/99-hdd-mount.rules
-
-# 7. Instalar PipeWire e componentes de áudio
-echo "Instalando PipeWire e componentes de áudio..."
-pacman -S --noconfirm pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber pavucontrol
-
-# 8. Instalar kernel Zen e Kernel padrão
-echo "Instalando kernel Zen e kernel padrão..."
-pacman -S --noconfirm linux linux-headers linux-zen linux-zen-headers
-
-# 9. Criar usuário blackbloc
-echo "Criando usuário 'blackbloc'..."
-useradd -m -G wheel -s /bin/bash blackbloc
-echo "Defina a senha do usuário 'blackbloc':"
-passwd blackbloc
-
-# 10. Instalar e ativar NetworkManager para conexão de rede
+# Instala e ativa o NetworkManager
 echo "Instalando e ativando NetworkManager..."
-pacman -S --noconfirm networkmanager network-manager-applet plasma-nm
+pacman -S --noconfirm networkmanager network-manager-applet
 systemctl enable NetworkManager
 systemctl start NetworkManager
 
-# 11. Adicionar suporte a Wi-Fi
-echo "Instalando suporte a Wi-Fi..."
-pacman -S --noconfirm wpa_supplicant wireless_tools netctl iw iwd
+# Cria o usuário 'blackbloc' de forma não interativa e configura sudo
+echo "Criando usuário 'blackbloc'..."
+useradd -m -G wheel -s /bin/bash blackbloc
+# Define uma senha temporária (substitua 'senha_padrao' pela senha desejada)
+echo "blackbloc:senha_padrao" | chpasswd
+chown -R blackbloc:blackbloc /home/blackbloc
+echo "blackbloc ALL=(ALL) ALL" > /etc/sudoers.d/blackbloc
 
-# 12. Configurar sudo para o usuário
-echo "Configurando sudo para o usuário..."
-echo "blackbloc ALL=(ALL) ALL" >> /etc/sudoers
+# Instala PipeWire e componentes de áudio
+echo "Instalando PipeWire e componentes de áudio..."
+pacman -S --noconfirm pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber pavucontrol
 
-# 13. Adicionar ajustes visuais e de desempenho no Pacman
-echo "Habilitando ParallelDownloads e Color no pacman.conf..."
-sed -i 's/#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
-sed -i 's/#Color/Color/' /etc/pacman.conf
-sed -i '/\[multilib\]/,/Include/s/^#//' /etc/pacman.conf
-pacman -Syu --noconfirm
+# Instala os kernels Linux padrão e Linux Zen
+echo "Instalando kernels (linux e linux-zen)..."
+pacman -S --noconfirm linux linux-headers linux-zen linux-zen-headers
 
-# 14. Instalar KDE Plasma 6 com suporte a Wayland
-echo "Instalando KDE Plasma 6 com suporte a Wayland..."
-# Obs.: Para garantir que o Plasma 6 seja instalado, certifique-se de estar usando os repositórios/testing ou que os pacotes já estejam atualizados.
-pacman -S --noconfirm plasma-meta kde-applications sddm qt5-wayland qt6-wayland
-
-# Instala o gerenciador de conexões do KDE, se necessário
-echo "Instalando Plasma Network Manager..."
-pacman -S --noconfirm plasma-nm
-
-# Configurar o SDDM (não forçamos uma diretiva para Wayland, pois o SDDM deverá listar as sessões disponíveis)
-echo "Habilitando SDDM..."
-systemctl enable sddm
-
-echo "Nota: Na tela de login do SDDM, selecione a sessão 'Plasma (Wayland)' se não estiver iniciando automaticamente."
-
-# 15. Detectar GPU e instalar drivers adequados
-echo "Detectando GPU..."
+# Detecta GPU e instala os drivers apropriados
+echo "Detectando GPU e instalando drivers..."
 GPU=$(lspci | grep -E "VGA|3D")
-
 if echo "$GPU" | grep -qi "NVIDIA"; then
-    echo "NVIDIA detectada. Instalando drivers..."
+    echo "GPU NVIDIA detectada. Instalando drivers..."
     pacman -S --noconfirm nvidia nvidia-utils nvidia-dkms nvidia-settings
-    echo "Adicionando módulos NVIDIA ao mkinitcpio..."
-    # ATENÇÃO: Idealmente, a linha MODULES= deve ser ajustada na configuração existente, e não apenas acrescentada.
-    echo "MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)" >> /etc/mkinitcpio.conf
+    # Insere os módulos da NVIDIA no mkinitcpio.conf (supondo que MODULES=() esteja vazio)
+    sed -i '/^MODULES=/ s/)/ nvidia nvidia_modeset nvidia_uvm nvidia_drm)/' /etc/mkinitcpio.conf
 elif echo "$GPU" | grep -qi "AMD"; then
-    echo "AMD detectada. Instalando drivers..."
+    echo "GPU AMD detectada. Instalando drivers..."
     pacman -S --noconfirm mesa xf86-video-amdgpu vulkan-radeon
-    echo "Adicionando módulo AMD ao mkinitcpio..."
-    echo "MODULES=(amdgpu)" >> /etc/mkinitcpio.conf
+    sed -i '/^MODULES=/ s/)/ amdgpu)/' /etc/mkinitcpio.conf
 elif echo "$GPU" | grep -qi "Intel"; then
-    echo "Intel detectada. Instalando drivers..."
+    echo "GPU Intel detectada. Instalando drivers..."
     pacman -S --noconfirm mesa xf86-video-intel vulkan-intel
-    echo "Adicionando módulo Intel ao mkinitcpio..."
-    echo "MODULES=(i915)" >> /etc/mkinitcpio.conf
+    sed -i '/^MODULES=/ s/)/ i915)/' /etc/mkinitcpio.conf
 else
-    echo "Nenhuma GPU conhecida detectada. Verifique manualmente!"
+    echo "Nenhuma GPU conhecida detectada."
 fi
 
-# 16. Atualizar mkinitcpio para incluir os módulos corretos
-echo "Atualizando initramfs para carregar os drivers..."
+# Atualiza o initramfs
+echo "Atualizando initramfs..."
 mkinitcpio -P
 
-# 17. Instalar yay para suporte ao AUR
-echo "Instalando yay para suporte ao AUR..."
+# Instala o Plasma 6 com suporte a Wayland (sem kde-applications)
+echo "Instalando KDE Plasma 6 com Wayland..."
+pacman -S --noconfirm plasma-workspace plasma-meta qt5-wayland qt6-wayland
+
+# Instala e ativa o GDM para gerenciar sessões Wayland
+echo "Instalando e ativando GDM..."
+pacman -S --noconfirm gdm
+# Desabilita eventuais vestígios do SDDM, se existirem
+systemctl disable sddm 2>/dev/null || true
+rm -f /etc/sddm.conf.d/wayland.conf
+systemctl enable gdm
+systemctl start gdm
+
+# Instala o yay (AUR helper) como usuário 'blackbloc'
+echo "Instalando yay (AUR helper)..."
 sudo -u blackbloc bash -c "cd /home/blackbloc && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
 
-# Mensagem final
+echo "Instalando pacotes adicionais via yay..."
+sudo -u blackbloc yay -S --noconfirm alacritty fish fastfetch virtualbox-host-dkms open-vm-tools
+
 echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
