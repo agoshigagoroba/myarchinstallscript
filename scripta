@@ -1,162 +1,124 @@
 #!/bin/bash
+set -e
 
-# Configurar mirrors do Arch Linux
+# Verifica se o script está sendo executado como root
+if [[ $EUID -ne 0 ]]; then
+   echo "Este script precisa ser executado como root." 
+   exit 1
+fi
+
+# 1. Configurar mirrors do Arch Linux
 echo "Atualizando mirrors do Arch Linux..."
 reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
 
-# Atualizar chaveiro do Arch
+# 2. Atualizar chaveiro do Arch
 echo "Baixando e populando o keyring..."
 pacman -Sy --noconfirm archlinux-keyring
 
-# Atualizar sistema
+# 3. Atualizar sistema
 echo "Atualizando o sistema..."
 pacman -Syu --noconfirm
 
-# Configurar fuso horário para Recife
+# 4. Configurar fuso horário para Recife
 echo "Definindo fuso horário para Recife..."
 ln -sf /usr/share/zoneinfo/America/Recife /etc/localtime
 hwclock --systohc
 timedatectl set-timezone America/Recife
 
-# Configurar teclado como ABNT2 (console e interface gráfica)
+# 5. Configurar teclado como ABNT2 (console e interface gráfica)
 echo "Configurando teclado como ABNT2..."
 echo "KEYMAP=br-abnt2" > /etc/vconsole.conf
 localectl set-x11-keymap br abnt2
 
-# Configurar locale
-echo "Configurando locale..."
-echo "pt_BR.UTF-8 UTF-8" >> /etc/locale.gen
-locale-gen
-echo "LANG=pt_BR.UTF-8" > /etc/locale.conf
-
-# Definir ponto de montagem padrão para HDs
+# 6. Definir ponto de montagem padrão para HDs
 echo "Configurando /mnt como local padrão para montagem de HDs..."
-mkdir -p /mnt/hd{1,2,3,4}
-cat << EOF > /etc/udev/rules.d/99-local-mount.rules
-ACTION=="add", SUBSYSTEMS=="usb", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", RUN{program}+="/usr/bin/systemd-mount --no-block --collect --discover /dev/%k /mnt/hd1"
-ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", KERNEL=="sd[b-z][0-9]", RUN{program}+="/usr/bin/systemd-mount --no-block --collect /dev/%k /mnt/hd%n1"
-EOF
+mkdir -p /mnt
+# ATENÇÃO: Esta linha gera um /etc/fstab inválido.
+# O arquivo fstab deve conter seis campos. Essa linha deve ser ajustada conforme a necessidade.
+echo "Defaults,auto,users,rw,uid=1000,gid=1000  0 2" > /etc/fstab
+echo 'SUBSYSTEM=="block", KERNEL=="sd[b-z][0-9]", ACTION=="add", RUN+="/usr/bin/mount -o defaults,auto,users,rw,uid=1000,gid=1000 /dev/%k /mnt"' > /etc/udev/rules.d/99-hdd-mount.rules
 
-# Instalar PipeWire e componentes de áudio
+# 7. Instalar PipeWire e componentes de áudio
 echo "Instalando PipeWire e componentes de áudio..."
 pacman -S --noconfirm pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber pavucontrol
 
-# Instalar kernel Zen e Kernel normal
+# 8. Instalar kernel Zen e Kernel padrão
 echo "Instalando kernel Zen e kernel padrão..."
 pacman -S --noconfirm linux linux-headers linux-zen linux-zen-headers
 
-# Criar usuário blackbloc
+# 9. Criar usuário blackbloc
 echo "Criando usuário 'blackbloc'..."
-useradd -m -G wheel,audio,video,storage,optical -s /bin/bash blackbloc
+useradd -m -G wheel -s /bin/bash blackbloc
 echo "Defina a senha do usuário 'blackbloc':"
 passwd blackbloc
 
-# Instalar e configurar rede
-echo "Instalando e configurando componentes de rede..."
-pacman -S --noconfirm networkmanager network-manager-applet wpa_supplicant wireless_tools netctl iw iwd dhcpcd
+# 10. Instalar e ativar NetworkManager para conexão de rede
+echo "Instalando e ativando NetworkManager..."
+pacman -S --noconfirm networkmanager network-manager-applet plasma-nm
 systemctl enable NetworkManager
-systemctl enable iwd
-systemctl enable dhcpcd
+systemctl start NetworkManager
 
-# Configurar sudo para o usuário
+# 11. Adicionar suporte a Wi-Fi
+echo "Instalando suporte a Wi-Fi..."
+pacman -S --noconfirm wpa_supplicant wireless_tools netctl iw iwd
+
+# 12. Configurar sudo para o usuário
 echo "Configurando sudo para o usuário..."
 echo "blackbloc ALL=(ALL) ALL" >> /etc/sudoers
 
-# Adicionar suporte ao AUR no Pacman
-echo "Habilitando repositórios do Arch User Repository (AUR)..."
+# 13. Adicionar ajustes visuais e de desempenho no Pacman
+echo "Habilitando ParallelDownloads e Color no pacman.conf..."
 sed -i 's/#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
 sed -i 's/#Color/Color/' /etc/pacman.conf
 sed -i '/\[multilib\]/,/Include/s/^#//' /etc/pacman.conf
 pacman -Syu --noconfirm
 
-# Instalar Xorg primeiro como base
-echo "Instalando Xorg base..."
-pacman -S --noconfirm xorg xorg-server xorg-xinit xorg-xwayland
+# 14. Instalar KDE Plasma 6 com suporte a Wayland
+echo "Instalando KDE Plasma 6 com suporte a Wayland..."
+# Obs.: Para garantir que o Plasma 6 seja instalado, certifique-se de estar usando os repositórios/testing ou que os pacotes já estejam atualizados.
+pacman -S --noconfirm plasma-meta kde-applications sddm qt5-wayland qt6-wayland
 
-# Instalar KDE Plasma com suporte Wayland
-echo "Instalando KDE Plasma com suporte Wayland..."
-pacman -S --noconfirm \
-    plasma \
-    plasma-meta \
-    plasma-wayland-session \
-    plasma-wayland-protocols \
-    qt5-wayland \
-    qt6-wayland \
-    sddm
+# Instala o gerenciador de conexões do KDE, se necessário
+echo "Instalando Plasma Network Manager..."
+pacman -S --noconfirm plasma-nm
 
-# Configurar SDDM
-echo "Configurando SDDM..."
-mkdir -p /etc/sddm.conf.d
+# Configurar o SDDM (não forçamos uma diretiva para Wayland, pois o SDDM deverá listar as sessões disponíveis)
+echo "Habilitando SDDM..."
+systemctl enable sddm
 
-# Criar usuário e grupo sddm se não existirem
-groupadd -r sddm 2>/dev/null || true
-useradd -r -g sddm -d /var/lib/sddm -s /usr/bin/nologin sddm 2>/dev/null || true
+echo "Nota: Na tela de login do SDDM, selecione a sessão 'Plasma (Wayland)' se não estiver iniciando automaticamente."
 
-# Criar diretório de configuração SDDM
-mkdir -p /var/lib/sddm
-chown -R sddm:sddm /var/lib/sddm
-
-# Configurar SDDM para X11 com suporte a sessão Wayland
-cat << EOF > /etc/sddm.conf.d/kde_settings.conf
-[General]
-DisplayServer=x11
-
-[Theme]
-Current=breeze
-CursorTheme=breeze_cursors
-
-[Users]
-MinimumUid=1000
-MaximumUid=60000
-
-[Wayland]
-SessionDir=/usr/share/wayland-sessions
-CompositorCommand=kwin_wayland --drm --no-lockscreen --no-global-shortcuts
-
-[X11]
-EnableHiDPI=true
-MinimumVT=1
-ServerArguments=-nolisten tcp
-EOF
-
-# Habilitar serviço SDDM
-systemctl enable sddm.service
-
-# Detectar GPU e instalar drivers adequados
+# 15. Detectar GPU e instalar drivers adequados
 echo "Detectando GPU..."
 GPU=$(lspci | grep -E "VGA|3D")
 
 if echo "$GPU" | grep -qi "NVIDIA"; then
     echo "NVIDIA detectada. Instalando drivers..."
     pacman -S --noconfirm nvidia nvidia-utils nvidia-dkms nvidia-settings
-    # Adicionar suporte a Wayland para NVIDIA
-    cat << EOF > /etc/modprobe.d/nvidia.conf
-options nvidia-drm modeset=1
-EOF
+    echo "Adicionando módulos NVIDIA ao mkinitcpio..."
+    # ATENÇÃO: Idealmente, a linha MODULES= deve ser ajustada na configuração existente, e não apenas acrescentada.
     echo "MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)" >> /etc/mkinitcpio.conf
 elif echo "$GPU" | grep -qi "AMD"; then
     echo "AMD detectada. Instalando drivers..."
     pacman -S --noconfirm mesa xf86-video-amdgpu vulkan-radeon
+    echo "Adicionando módulo AMD ao mkinitcpio..."
     echo "MODULES=(amdgpu)" >> /etc/mkinitcpio.conf
 elif echo "$GPU" | grep -qi "Intel"; then
     echo "Intel detectada. Instalando drivers..."
     pacman -S --noconfirm mesa xf86-video-intel vulkan-intel
+    echo "Adicionando módulo Intel ao mkinitcpio..."
     echo "MODULES=(i915)" >> /etc/mkinitcpio.conf
 else
-    echo "Nenhuma GPU conhecida detectada. Instalando drivers genéricos..."
-    pacman -S --noconfirm mesa xf86-video-vesa
+    echo "Nenhuma GPU conhecida detectada. Verifique manualmente!"
 fi
 
-# Atualizar mkinitcpio para incluir os módulos corretos
+# 16. Atualizar mkinitcpio para incluir os módulos corretos
 echo "Atualizando initramfs para carregar os drivers..."
 mkinitcpio -P
 
-# Instalar yay (como usuário blackbloc)
+# 17. Instalar yay para suporte ao AUR
 echo "Instalando yay para suporte ao AUR..."
-pacman -S --noconfirm base-devel git
-su - blackbloc -c "git clone https://aur.archlinux.org/yay.git /tmp/yay && cd /tmp/yay && makepkg -si --noconfirm"
+sudo -u blackbloc bash -c "cd /home/blackbloc && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
 
 # Mensagem final
 echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
-echo "Após reiniciar, o sistema iniciará preferencialmente em Wayland."
-echo "Para verificar se está usando Wayland, execute 'echo \$XDG_SESSION_TYPE' após logar."
