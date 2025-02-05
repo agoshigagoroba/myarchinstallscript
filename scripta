@@ -144,6 +144,6 @@ echo "Instalando yay (AUR helper) para o usuário $username..."
 sudo -u "$username" bash -c "cd ~ && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
 
 echo "Instalando pacotes adicionais via yay..."
-sudo -u "$username" yay -S --noconfirm alacritty virtualbox-host-dkms open-vm-tools dolphin plasma-systemmonitor spectacle kdeconnect kfind firefox kmag kmix gparted fastfetch
+sudo -u "$username" yay -S --noconfirm alacritty virtualbox-host-dkms open-vm-tools dolphin plasma-systemmonitor filelight kcalc spectacle kdeconnect ksystemlog kamoso kfind firefox kmag kmix gparted fastfetch
 
 echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
