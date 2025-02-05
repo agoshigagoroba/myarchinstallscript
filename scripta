@@ -7,6 +7,10 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+##########################
+# Preparação do Sistema  #
+##########################
+
 # Instala o reflector, se não estiver instalado
 echo "Instalando reflector..."
 pacman -S --noconfirm reflector
@@ -20,7 +24,7 @@ echo "Atualizando keyring e sistema..."
 pacman -Sy --noconfirm archlinux-keyring
 pacman -Syu --noconfirm
 
-# Configura fuso horário para Recife
+# Configura o fuso horário para Recife
 echo "Configurando fuso horário para Recife..."
 ln -sf /usr/share/zoneinfo/America/Recife /etc/localtime
 hwclock --systohc
@@ -68,24 +72,47 @@ fi
 echo "Atualizando initramfs..."
 mkinitcpio -P
 
+####################################
+# Instalação do Ambiente Gráfico   #
+####################################
+
 # Instala o Plasma 6 com suporte a Wayland (sem o pacote kde-applications)
 echo "Instalando KDE Plasma 6 com Wayland..."
 pacman -S --noconfirm plasma-workspace plasma-meta qt5-wayland qt6-wayland
 
-# Instala e ativa o GDM para gerenciar sessões Wayland
-echo "Instalando e ativando GDM..."
-pacman -S --noconfirm gdm
-systemctl disable sddm 2>/dev/null || true
-rm -f /etc/sddm.conf.d/wayland.conf
-systemctl enable gdm
-systemctl start gdm
+# Instala e configura o LightDM como display manager
+echo "Instalando e configurando LightDM..."
+pacman -S --noconfirm lightdm lightdm-gtk-greeter
+# Configura o LightDM para usar a sessão Plasma Wayland por padrão:
+if [ -f /etc/lightdm/lightdm.conf ]; then
+    # Insere a linha 'user-session=plasmawayland-session' na seção [Seat:*]
+    sed -i '/^\[Seat:\*\]/a user-session=plasmawayland-session' /etc/lightdm/lightdm.conf
+else
+    cat <<EOF >/etc/lightdm/lightdm.conf
+[Seat:*]
+user-session=plasmawayland-session
+EOF
+fi
+systemctl enable lightdm
+systemctl start lightdm
 
-# --- Criação interativa do usuário (penúltima ação) ---
+##########################
+# Instalação do Fish Shell#
+##########################
+
+echo "Instalando fish shell..."
+pacman -S --noconfirm fish
+
+#####################################################
+# Criação Interativa do Usuário (Penúltima Etapa)    #
+#####################################################
+
 echo "=============================================="
 echo "Criação interativa de usuário"
 echo "=============================================="
 read -rp "Informe o nome do usuário a ser criado: " username
-useradd -m -G wheel -s /bin/bash "$username"
+# Cria o usuário com o fish como shell padrão
+useradd -m -G wheel -s /usr/bin/fish "$username"
 echo "Agora, defina a senha para o usuário $username:"
 passwd "$username"
 chown -R "$username":"$username" /home/"$username"
@@ -93,19 +120,31 @@ echo "$username ALL=(ALL) ALL" > /etc/sudoers.d/"$username"
 echo "Usuário $username criado com sucesso!"
 echo "=============================================="
 
-# --- Instalação do yay e pacotes adicionais via yay (última ação) ---
+#####################################################
+# Configuração do Fish: Executa fastfetch no início  #
+#####################################################
+
+echo "Configurando fish para rodar fastfetch no startup..."
+sudo -u "$username" bash -c 'mkdir -p ~/.config/fish; \
+    if [ -f ~/.config/fish/config.fish ]; then \
+      echo "fastfetch" | cat - ~/.config/fish/config.fish > ~/.config/fish/config.fish.new; \
+      mv ~/.config/fish/config.fish.new ~/.config/fish/config.fish; \
+    else \
+      echo "fastfetch" > ~/.config/fish/config.fish; \
+    fi'
+
+#####################################################
+# Instalação do yay e Pacotes Adicionais via yay     #
+#####################################################
 
 # Instala o yay (AUR helper) como o usuário recém-criado
 echo "Instalando yay (AUR helper) para o usuário $username..."
-sudo -u "$username" bash -c "cd /home/$username && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
+sudo -u "$username" bash -c "cd ~ && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
 
 # Instala pacotes adicionais via yay:
-#   - alacritty: terminal moderno com aceleração por GPU
-#   - fish: shell interativo
-#   - fastfetch: ferramenta de informação do sistema
-#   - virtualbox-host-dkms: suporte ao Oracle VirtualBox (modo host)
-#   - open-vm-tools: ferramentas para VMware
+#   dolphin, plasma-systemmonitor, spectacle, kdeconnect, kfind,
+#   firefox, kmag, kmix, gparted
 echo "Instalando pacotes adicionais via yay para o usuário $username..."
-sudo -u "$username" yay -S --noconfirm alacritty fish fastfetch virtualbox-host-dkms open-vm-tools
+sudo -u "$username" yay -S --noconfirm dolphin plasma-systemmonitor spectacle kdeconnect kfind firefox kmag kmix gparted
 
 echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
