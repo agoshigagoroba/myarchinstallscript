@@ -1,0 +1,129 @@
+#!/bin/bash
+set -e
+
+# Verifica se o script está sendo executado como root
+if [[ $EUID -ne 0 ]]; then
+  echo "Este script deve ser executado como root."
+  exit 1
+fi
+
+##########################
+# Preparação do Sistema  #
+##########################
+
+echo "Instalando reflector..."
+pacman -S --noconfirm reflector
+
+echo "Atualizando mirrors do Arch Linux..."
+reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
+
+echo "Atualizando keyring e sistema..."
+pacman -Sy --noconfirm archlinux-keyring
+pacman -Syu --noconfirm
+
+echo "Configurando fuso horário para Recife..."
+ln -sf /usr/share/zoneinfo/America/Recife /etc/localtime
+hwclock --systohc
+timedatectl set-timezone America/Recife
+
+echo "Configurando teclado (ABNT2)..."
+echo "KEYMAP=br-abnt2" > /etc/vconsole.conf
+localectl set-x11-keymap br abnt2
+
+echo "Instalando e ativando NetworkManager..."
+pacman -S --noconfirm networkmanager network-manager-applet
+systemctl enable NetworkManager
+systemctl start NetworkManager
+
+echo "Instalando PipeWire e componentes de áudio..."
+pacman -S --noconfirm pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber pavucontrol
+
+echo "Instalando kernels (normal e zen)..."
+pacman -S --noconfirm linux linux-headers linux-zen linux-zen-headers
+
+echo "Detectando GPU e instalando drivers..."
+GPU=$(lspci | grep -E "VGA|3D")
+if echo "$GPU" | grep -qi "NVIDIA"; then
+    pacman -S --noconfirm nvidia nvidia-utils nvidia-dkms nvidia-settings
+    sed -i '/^MODULES=/ s/)/ nvidia nvidia_modeset nvidia_uvm nvidia_drm)/' /etc/mkinitcpio.conf
+elif echo "$GPU" | grep -qi "AMD"; then
+    pacman -S --noconfirm mesa xf86-video-amdgpu vulkan-radeon
+    sed -i '/^MODULES=/ s/)/ amdgpu)/' /etc/mkinitcpio.conf
+elif echo "$GPU" | grep -qi "Intel"; then
+    pacman -S --noconfirm mesa xf86-video-intel vulkan-intel
+    sed -i '/^MODULES=/ s/)/ i915)/' /etc/mkinitcpio.conf
+fi
+
+echo "Atualizando initramfs..."
+mkinitcpio -P
+
+# Se o GRUB estiver instalado, tenta configurar o kernel zen como padrão.
+if [ -f /boot/grub/grub.cfg ]; then
+    echo "Configurando o GRUB para iniciar com linux-zen por padrão..."
+    default_entry=$(grep -E "menuentry '.*linux-zen.*'" /boot/grub/grub.cfg | head -n1 | cut -d"'" -f2)
+    if [ -n "$default_entry" ]; then
+        grub-set-default "$default_entry"
+        echo "Entrada padrão do GRUB definida como: $default_entry"
+    else
+        echo "Não foi possível encontrar uma entrada para linux-zen no grub.cfg."
+    fi
+fi
+
+####################################
+# Instalação do Ambiente Gráfico   #
+####################################
+
+echo "Instalando Gnome..."
+pacman -S --noconfirm gnome gnome-extra
+
+echo "Instalando GDM..."
+pacman -S --noconfirm gdm
+systemctl enable gdm
+systemctl start gdm
+
+##########################
+# Instalação do Fish Shell#
+##########################
+
+echo "Instalando fish shell..."
+pacman -S --noconfirm fish
+
+#####################################################
+# Criação Interativa do Usuário (Penúltima Etapa)    #
+#####################################################
+
+echo "=============================================="
+echo "Criação interativa de usuário"
+echo "=============================================="
+read -rp "Informe o nome do usuário a ser criado: " username
+useradd -m -G wheel -s /usr/bin/fish "$username"
+echo "Agora, defina a senha para o usuário $username:"
+passwd "$username"
+chown -R "$username":"$username" /home/"$username"
+echo "$username ALL=(ALL) ALL" > /etc/sudoers.d/"$username"
+echo "Usuário $username criado com sucesso!"
+echo "=============================================="
+
+#####################################################
+# Configuração do Fish: fastfetch no startup         #
+#####################################################
+
+echo "Configurando fish para rodar fastfetch no startup..."
+sudo -u "$username" bash -c 'mkdir -p ~/.config/fish; \
+if [ -f ~/.config/fish/config.fish ]; then \
+  { echo "fastfetch"; cat ~/.config/fish/config.fish; } > ~/.config/fish/config.fish.new && mv ~/.config/fish/config.fish.new ~/.config/fish/config.fish; \
+else \
+  echo "fastfetch" > ~/.config/fish/config.fish; \
+fi'
+
+#####################################################
+# Instalação do yay e Pacotes Adicionais via yay     #
+#####################################################
+
+echo "Instalando yay (AUR helper) para o usuário $username..."
+sudo -u "$username" bash -c "cd ~ && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
+
+echo "Instalando pacotes adicionais via yay..."
+sudo -u "$username" yay -S --noconfirm alacritty virtualbox-host-dkms open-vm-tools gnome-tweaks gnome-terminal gnome-shell-extensions firefox gparted fastfetch
+
+echo "Instalação concluída! Reinicie o sistema para aplicar todas as mudanças."
